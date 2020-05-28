@@ -6,6 +6,7 @@ import android.bluetooth.le.ScanResult;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Handler;
+import android.os.Message;
 
 import com.welie.blessed.BluetoothBytesParser;
 import com.welie.blessed.BluetoothCentral;
@@ -15,6 +16,7 @@ import com.welie.blessed.BluetoothPeripheralCallback;
 
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 
 import timber.log.Timber;
@@ -25,6 +27,11 @@ import static android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
 import static com.welie.blessed.BluetoothBytesParser.FORMAT_UINT8;
 import static com.welie.blessed.BluetoothBytesParser.bytes2String;
 import static com.welie.blessed.BluetoothPeripheral.GATT_SUCCESS;
+import static com.welie.blessedexample.MainActivity.MSG_PERIPHERAL_CONNECTED;
+import static com.welie.blessedexample.MainActivity.MSG_PERIPHERAL_CONNECTION_FAIL;
+import static com.welie.blessedexample.MainActivity.MSG_PERIPHERAL_DISCONNECTED;
+import static com.welie.blessedexample.MainActivity.MSG_PERIPHERAL_DISCOVERED;
+import static com.welie.blessedexample.MainActivity.MSG_PERIPHERAL_SCANNING;
 import static java.lang.Math.abs;
 
 class BluetoothHandler {
@@ -59,7 +66,7 @@ class BluetoothHandler {
     private BluetoothCentral central;
     private static BluetoothHandler instance = null;
     private Context context;
-    private Handler handler = new Handler();
+    private Handler mainHandler;
     private int currentTimeCounter = 0;
 
     // Callback for peripherals
@@ -205,19 +212,30 @@ class BluetoothHandler {
         @Override
         public void onConnectedPeripheral(BluetoothPeripheral peripheral) {
             Timber.i("connected to '%s'", peripheral.getName());
+            if (mainHandler != null) {
+                Message msg = mainHandler.obtainMessage(MSG_PERIPHERAL_CONNECTED);
+                msg.obj = peripheral;
+                msg.sendToTarget();
+            }
         }
 
         @Override
         public void onConnectionFailed(BluetoothPeripheral peripheral, final int status) {
             Timber.e("connection '%s' failed with status %d", peripheral.getName(), status);
+            if (mainHandler != null)
+                mainHandler.sendEmptyMessage(MSG_PERIPHERAL_CONNECTION_FAIL);
         }
 
         @Override
         public void onDisconnectedPeripheral(final BluetoothPeripheral peripheral, final int status) {
             Timber.i("disconnected '%s' with status %d", peripheral.getName(), status);
 
+            if (mainHandler == null) return;
+
+            mainHandler.sendEmptyMessage(MSG_PERIPHERAL_DISCONNECTED);
+
             // Reconnect to this device when it becomes available again
-            handler.postDelayed(new Runnable() {
+            mainHandler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
                     central.autoConnectPeripheral(peripheral, peripheralCallback);
@@ -228,6 +246,9 @@ class BluetoothHandler {
         @Override
         public void onDiscoveredPeripheral(BluetoothPeripheral peripheral, ScanResult scanResult) {
             Timber.i("Found peripheral '%s'", peripheral.getName());
+            if (mainHandler != null)
+                mainHandler.sendEmptyMessage(MSG_PERIPHERAL_DISCOVERED);
+
             central.stopScan();
             central.connectPeripheral(peripheral, peripheralCallback);
         }
@@ -241,6 +262,9 @@ class BluetoothHandler {
                 central.startPairingPopupHack();
                 central.scanForPeripheralsWithNames(new String[]{"Gogoro Eeyo"});
 //                central.scanForPeripheralsWithServices(new UUID[]{BLP_SERVICE_UUID, HTS_SERVICE_UUID, HRS_SERVICE_UUID});
+
+                if (mainHandler != null)
+                    mainHandler.sendEmptyMessage(MSG_PERIPHERAL_SCANNING);
             }
         }
     };
@@ -265,5 +289,17 @@ class BluetoothHandler {
         central.startPairingPopupHack();
         central.scanForPeripheralsWithNames(new String[]{"Gogoro Eeyo"});
 //        central.scanForPeripheralsWithServices(new UUID[]{BLP_SERVICE_UUID, HTS_SERVICE_UUID, HRS_SERVICE_UUID});
+    }
+
+    void setMainHandler(Handler handler) {
+        this.mainHandler = handler;
+    }
+
+    void release() {
+        this.mainHandler = null;
+    }
+
+    List<BluetoothPeripheral> getConnectedDevices() {
+        return central.getConnectedPeripherals();
     }
 }

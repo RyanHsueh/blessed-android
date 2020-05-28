@@ -11,8 +11,15 @@ import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import com.welie.blessed.BluetoothPeripheral;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -22,21 +29,84 @@ import timber.log.Timber;
 
 public class MainActivity extends AppCompatActivity {
 
+    static final int MSG_PERIPHERAL_SCANNING = 1000;
+    static final int MSG_PERIPHERAL_DISCOVERED = 1001;
+    static final int MSG_PERIPHERAL_CONNECTED = 1002;
+    static final int MSG_PERIPHERAL_DISCONNECTED = 1003;
+    static final int MSG_PERIPHERAL_CONNECTION_FAIL = 1004;
+
     private final String TAG = MainActivity.class.getSimpleName();
     private TextView measurementValue;
+    private TextView bleStatus;
+    private TextView textDeviceInfo;
+    private Button btnGetConnected;
     private static final int REQUEST_ENABLE_BT = 1;
     private static final int ACCESS_LOCATION_REQUEST = 2;
+
+    private BluetoothHandler bluetoothHandler;
+
+    private MainHandler handler = new MainHandler();
+    private class MainHandler extends Handler {
+
+        @Override
+        public void handleMessage(@NonNull Message msg) {
+            switch (msg.what) {
+                case MSG_PERIPHERAL_SCANNING:
+                    bleStatus.setText("SCANNING");
+                    break;
+                case MSG_PERIPHERAL_DISCOVERED:
+                    bleStatus.setText("DISCOVERED");
+                    break;
+                case MSG_PERIPHERAL_CONNECTED:
+                    bleStatus.setText("CONNECTED");
+
+                    BluetoothPeripheral peripheral = (BluetoothPeripheral)msg.obj;
+                    textDeviceInfo.setText(String.format("name=%s, mac=%s, state=%d, type=%d", peripheral.getName(), peripheral.getAddress(), peripheral.getState(), peripheral.getType()));
+                    break;
+                case MSG_PERIPHERAL_DISCONNECTED:
+                    bleStatus.setText("DISCONNECTED");
+                    textDeviceInfo.setText("");
+                    break;
+                case MSG_PERIPHERAL_CONNECTION_FAIL:
+                    bleStatus.setText("CONNECTION FAIL");
+                    break;
+                default:
+                    bleStatus.setText("UNKNOWN");
+            }
+
+            super.handleMessage(msg);
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        measurementValue = (TextView) findViewById(R.id.bloodPressureValue);
+        measurementValue = findViewById(R.id.bloodPressureValue);
+        bleStatus = findViewById(R.id.bleStatus);
+        textDeviceInfo = findViewById(R.id.textDeviceInfo);
+        btnGetConnected = findViewById(R.id.btnGetConnected);
+        btnGetConnected.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (bluetoothHandler != null) {
+                    Toast.makeText(v.getContext(), "connected devices = " + bluetoothHandler.getConnectedDevices().size(), Toast.LENGTH_LONG).show();
+                }
+            }
+        });
 
-        registerReceiver(bloodPressureDataReceiver, new IntentFilter( "BluetoothMeasurement" ));
-        registerReceiver(temperatureDataReceiver, new IntentFilter( "TemperatureMeasurement" ));
-        registerReceiver(heartRateDataReceiver, new IntentFilter( "HeartRateMeasurement" ));
+        checkBluetoothEnable();
 
+        if(hasPermissions()) {
+            initBluetoothHandler();
+        }
+
+        if (bluetoothHandler != null) {
+            bluetoothHandler.setMainHandler(handler);
+        }
+    }
+
+    private void checkBluetoothEnable() {
         BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if(bluetoothAdapter == null) return;
 
@@ -44,19 +114,20 @@ public class MainActivity extends AppCompatActivity {
             Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
         }
-
-        if(hasPermissions()) {
-            initBluetoothHandler();
-        }
     }
+
     private void initBluetoothHandler()
     {
-        BluetoothHandler.getInstance(getApplicationContext());
+        bluetoothHandler = BluetoothHandler.getInstance(getApplicationContext());
+        registerReceiver(bloodPressureDataReceiver, new IntentFilter( "BluetoothMeasurement" ));
+        registerReceiver(temperatureDataReceiver, new IntentFilter( "TemperatureMeasurement" ));
+        registerReceiver(heartRateDataReceiver, new IntentFilter( "HeartRateMeasurement" ));
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (bluetoothHandler != null) bluetoothHandler.release();
         unregisterReceiver(bloodPressureDataReceiver);
         unregisterReceiver(temperatureDataReceiver);
         unregisterReceiver(heartRateDataReceiver);
