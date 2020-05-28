@@ -632,7 +632,7 @@ public class BluetoothCentral {
             if (deviceType == BluetoothDevice.DEVICE_TYPE_UNKNOWN) {
                 // The peripheral is not cached so we cannot autoconnect
                 Timber.d("peripheral with address '%s' not in Bluetooth cache, autoconnecting by scanning", peripheral.getAddress());
-                unconnectedPeripherals.put(peripheral.getAddress(), peripheral);
+//                unconnectedPeripherals.put(peripheral.getAddress(), peripheral);
                 autoConnectPeripheralByScan(peripheral.getAddress(), peripheralCallback);
                 return;
             }
